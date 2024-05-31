@@ -1,0 +1,176 @@
+---
+title: "WHO Data Analysis"
+output: html_document
+date: "2024-03-12"
+---
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+######### download packages, clean and load data
+knitr::opts_chunk$set(echo = TRUE)
+
+library(dplyr)    # For data manipulation
+library(ggplot2)  # For data visualization
+library(tidyverse) 
+if (!requireNamespace("car", quietly = TRUE)) {
+  install.packages("car")
+}
+library(car)
+install.packages("lmtest")
+library(lmtest)
+data=read_csv("Life Expectancy Data.csv")
+colnames(data)[colnames(data) == "Life expectancy"] <- "life_expectancy" 
+colnames(data)[colnames(data) == "Adult Mortality"] <- "adult_mortality" 
+colnames(data)[colnames(data) == "HIV/AIDS"] <- "hiv_aids" 
+colnames(data)[colnames(data) == "Income composition of resources"] <- "income_composition_of_resources" 
+colnames(data)[colnames(data) == "thinness  1-19 years"] <- "thinness_1_19_years" 
+colnames(data)[colnames(data) == "thinness 5-9 years"] <- "thinness_5_9_years" 
+colnames(data)[colnames(data) == "percentage expenditure"] <- "percentage_expenditure" 
+colnames(data)[colnames(data) == "Total expenditure"] <- "total_expenditure" 
+clean_data<-na.omit(data)
+
+#summary(data)
+#variance <- apply(data, 2, var)
+
+# Print the variance of each predictor
+#print(variance)
+data_2008 <- clean_data %>% filter(Year == 2008)
+summary(data_2008)
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+model_2008=glm(life_expectancy~ Status+Diphtheria+GDP+income_composition_of_resources+Schooling, data=data_2008, family=Gamma(link = "inverse"))
+hist(data_2008$life_expectancy, 
+     main = "Histogram of Life Expectancy (2008)",
+     xlab = "Life Expectancy",
+     col = "skyblue",  # Adjust color as desired
+     border = "black", # Adjust border color as desired
+     breaks = 20) 
+
+summary(model_2008)
+# Generate residuals plot with a custom x-axis label
+plot(model_2008, which = 1, main = "Residuals vs. Fitted - Full Model")
+
+
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+predictor_variables <- c("Status",  "Diphtheria",  "GDP", "Schooling")
+
+# Create scatterplots or density plots for each predictor variable against life expectancy
+for (predictor in predictor_variables) {
+    # Create box plot
+  boxplot_data <- ggplot(data_2008, aes_string(y = predictor)) +
+    geom_boxplot(fill = "skyblue", color = "black") +
+    labs(title = paste("Boxplot of", predictor),
+         y = predictor)
+  
+  # Print the box plot
+  print(boxplot_data)
+
+}
+
+boxplot_data_icr <- ggplot(data_2008, aes_string(y = "income_composition_of_resources")) +
+    geom_boxplot(fill = "skyblue", color = "black") +
+    labs(title = paste("Boxplot of Income Composition of Resources"),
+         y = "Income Composition of Resources")
+  
+  # Print the box plot
+  print(boxplot_data_icr)
+
+
+
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+# Create a bivariate matrix
+subset_data <- data_2008[, c("Diphtheria", "GDP", "income_composition_of_resources", "Schooling")]
+colnames(subset_data) <- c("Diphtheria", "GDP", "Income Composition of Resources", "Schooling")
+
+# Plot the bivariate matrix
+pairs(subset_data)
+
+# Create a list to store individual plots
+plots <- list()
+
+# Loop through each numeric predictor and create bivariate plots with the categorical variable
+for (predictor in c("Diphtheria", "GDP", "income_composition_of_resources", "Schooling")) {
+  # Create bivariate plot for each combination of categorical variable and numeric predictor
+  plots[[predictor]] <- ggplot(data_2008, aes_string(x = "Status", y = predictor)) +
+    geom_point(color = "skyblue") +
+    labs(title = ifelse(predictor == "income_composition_of_resources", 
+                        paste("Bivariate plot of Income Composition of Resources by Status"), 
+                        paste("Bivariate plot of", predictor, "by Status")),
+         x = "Status", y = ifelse(predictor == "income_composition_of_resources", 
+                                  "Income Composition of Resources", predictor))
+}
+
+
+
+# Display the plots in a grid
+library(gridExtra)
+grid.arrange(grobs = plots, ncol = 2)
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Compute DFBETAS
+dfbetas <- dfbetas(model_2008)
+
+# Set a threshold for identifying outliers
+threshold <- 2 / sqrt(nrow(data_2008))  # Threshold based on 2 / sqrt(n)
+
+# Identify outliers using the threshold
+outliers <- apply(abs(dfbetas), 1, max) > threshold
+
+# Get the indices of outliers
+outlier_indices <- which(outliers)
+
+# Print the indices of outliers
+print(outlier_indices)
+
+# Subset the predictors of interest from data_2008
+predictors_of_interest <- c("Status", "Diphtheria", "GDP", "income_composition_of_resources", "Schooling")
+outlier_details_predictors <- data_2008[outlier_indices, predictors_of_interest]
+
+# Print the details of the outliers for the predictors of interest
+print(outlier_details_predictors)
+
+# Get the indices of non-outliers
+non_outlier_indices <- which(!outliers)
+
+# Create a new dataset without outliers
+clean_data_no_outliers <- data_2008[non_outlier_indices, ]
+
+model_no_outliers <- glm(life_expectancy ~ Status + Diphtheria + GDP + income_composition_of_resources + Schooling, data = clean_data_no_outliers, family = Gamma(link = "inverse"))
+
+summary(model_no_outliers)
+plot(model_no_outliers)
+
+hist(clean_data_no_outliers$life_expectancy, 
+     main = "Histogram of Life Expectancy (without outliers)",
+     xlab = "Life Expectancy",
+     col = "skyblue",  # Matching fill color
+     border = "black",
+     ylim = c(0, 30), # Adjust ylim to match the range of the first histogram
+     breaks = 20)
+
+
+
+```
+
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Perform stepwise selection
+step_model <- step(model_2008)
+# View the final selected model
+summary(step_model)
+
+plot(step_model, which=1, main="Residuals vs. Fitted - Final Model")
+
+# Perform likelihood ratio test
+lrt <- lrtest(model_2008, step_model)
+
+# Print the likelihood ratio test results
+print(lrt)
+```
+
